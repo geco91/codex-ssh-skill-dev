@@ -12,6 +12,10 @@ provisioning test VMs and running tests. The tools come from
 [tunnel-client](https://github.com/openai/tunnel-client) connects them to supported
 OpenAI products without a public MCP listener.
 
+**Experimental community project.** This is a lightweight SSH tool bridge, not a
+full Codex installation on the server. "Lightweight" describes the architecture,
+not measured resource use or limited privileges.
+
 [Get started](#install-on-your-local-host) · [Setup guide](docs/onboarding.md) ·
 [Download skill ZIP](https://raw.githubusercontent.com/geco91/codex-ssh-skill/v0.2.0/downloads/v0.2.0/codex-ssh.zip) ·
 [SHA-256](downloads/v0.2.0/SHA256SUMS) · [Releases](https://github.com/geco91/codex-ssh-skill/releases)
@@ -40,6 +44,76 @@ flowchart LR
 Run the client and MCP server on your local host. Choose a plain Debian server,
 or use Proxmox to manage the host and test inside its guests. The **skill provides
 instructions**; the **MCP connection provides tools**. You install both.
+
+### What is installed where?
+
+The guided installer puts these components on the Debian/Proxmox host:
+
+| Component | Role |
+| --- | --- |
+| `tunnel-client` | Outbound HTTPS transport to OpenAI; starts the stdio MCP process and manages its runtime. It is not the Codex agent. |
+| `ssh-mcp` | Python MCP server in an isolated virtual environment; exposes command, file and session tools using the system's OpenSSH programs. |
+| OpenSSH client and server | Execute SSH operations and provide a separate, key-only SSH listener on `127.0.0.1:22222`. The existing host SSH configuration is preserved. |
+| Local account and credentials | `codex-test` without sudo, SSH login keys and pinned host keys, plus a protected tunnel runtime-key file after tunnel setup. |
+
+Python/venv, OpenSSH, curl, CA certificates and OpenSSL are installed or checked
+by the bootstrap. Upstream `ssh_sync` additionally needs rsync on both ends;
+tmux is optional for observing sessions. Neither is installed by this bootstrap.
+See [the installer details](docs/bootstrap.md#what-the-bootstrap-changes) and
+[SSH-MCP requirements](https://github.com/slepp/ssh-mcp/blob/37381ddc68a941b62ed8557dcbb5644dc3b6c5fd/README.md#requirements).
+
+The **Codex SSH skill is installed in the product using the connection**, not as
+another server daemon. A separate SSH target or guest needs an SSH server, an
+authorized account and the tools required by its task; it does not need its own
+tunnel client, MCP server or Codex CLI.
+
+**No personal ChatGPT/Codex login is required on the server for this route.**
+The connected product uses your existing product login; the local tunnel uses
+a restricted Platform runtime API key with Tunnels Read + Use. That key and the
+SSH keys are still credentials that must be protected. This installer does not
+install Codex CLI or copy a Codex `auth.json` onto the host.
+
+### SSH bridge or native Codex?
+
+Choose where the Codex agent should run and which interface you need:
+
+| Route | What runs on the machine doing the work? | Best fit |
+| --- | --- | --- |
+| This SSH-MCP/tunnel bridge | Tunnel client, SSH-MCP and SSH; Codex calls the exposed tools from the connected product. | Server administration and bounded remote tasks without a personal Codex login on the server. |
+| Native Codex CLI on the server | Codex CLI, its authentication/configuration and the project's development tools. | A full agent runtime working directly in the server's checkout, used from a terminal or SSH session. |
+| Desktop app SSH remote | Codex installed and authenticated on the SSH host; the desktop app starts its app-server over SSH. | Native remote project chats against that host's files and shell. |
+| Paired desktop/mobile Remote | A running, signed-in desktop app on the connected host, with remote access enabled and devices paired. | Continuing work and approvals from another supported device. |
+
+For the native routes, follow the official [CLI installation](https://learn.chatgpt.com/docs/codex/cli)
+and [remote connection](https://learn.chatgpt.com/docs/remote-connections) guides.
+Codex CLI supports ChatGPT sign-in or API-key authentication; a personal browser
+login is not the only option. Credentials may be cached in `~/.codex/auth.json`
+or an OS credential store. See [authentication and storage](https://learn.chatgpt.com/docs/auth).
+Native project workflows do not require this repository's SSH-MCP/tunnel stack.
+
+Do not confuse the paired Remote product with the developer commands
+`codex remote-control` and `codex app-server`, which the current
+[CLI reference](https://learn.chatgpt.com/docs/cli/reference) labels **Experimental**.
+A custom `codex --remote` client connects to an app-server, not to SSH-MCP;
+its WebSocket transport is also documented as experimental and unsupported.
+Keep it private and follow the [app-server authentication guidance](https://learn.chatgpt.com/docs/app-server).
+An SSH shell does not automatically provide browser or desktop GUI control;
+native Remote can use those capabilities only when the host has them configured.
+
+### Security boundary
+
+The tunnel avoids a public MCP listener, but command arguments and results still
+travel through OpenAI. It is a transport, not a sandbox. SSH-MCP can execute
+arbitrary commands with the permissions of the SSH account and the credentials
+available to it; the skill's target and workflow rules are instructions, not
+an enforced host or command allowlist.
+
+**Root access remains full root access.** Enabling the Proxmox admin alias is
+not limited to selected VMs, even though the MCP process runs as `codex-test`.
+Keeping personal Codex credentials off the host reduces credential exposure; it
+does not make root commands safe or the SSH bridge inherently safer than native
+Codex. Use least-privilege accounts, protect the tunnel and SSH keys, verify host
+identity, and approve the actual scope of each task.
 
 ## Install on your local host
 
